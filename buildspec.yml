@@ -10,8 +10,8 @@ phases:
 
   build:
     commands:
-      - echo "Running training script..."
-      - python train.py
+      - echo "Running training script on Sagemaker..."
+      - python run_sagemaker.py
 
 artifacts:
   files:
