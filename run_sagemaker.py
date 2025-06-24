@@ -2,11 +2,11 @@ import sagemaker
 from sagemaker.sklearn.estimator import SKLearn
 import boto3
 
-from dotenv import load_dotenv
-load_dotenv()
-
+#from dotenv import load_dotenv
+#load_dotenv()
 import os
-role = os.getenv("SAGEMAKER_EXECUTION_ROLE")
+
+role = os.getenv("SAGEMAKER_ROLE")
 
 
 # --- Configuration ---
