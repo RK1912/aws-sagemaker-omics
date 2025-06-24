@@ -6,3 +6,5 @@ matplotlib
 seaborn
 joblib
 scipy
+sagemaker
+boto3
