@@ -8,3 +8,4 @@ joblib
 scipy
 sagemaker
 boto3
+python-dotenv
