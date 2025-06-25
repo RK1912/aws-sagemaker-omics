@@ -6,9 +6,7 @@ import boto3
 #load_dotenv()
 import os
 
-#role = os.getenv("SAGEMAKER_ROLE")
-role='arn:aws:iam::228304386991:role/ramya1912_sagemaker'
-
+role = os.getenv("SAGEMAKER_ROLE")
 
 
 # --- Configuration ---
