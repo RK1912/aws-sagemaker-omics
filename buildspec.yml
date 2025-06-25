@@ -3,7 +3,7 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      python: 3.12
+      python: 3.8
     commands:
       - echo "Installing python 3.8..."
       - pyenv install 3.8.18
