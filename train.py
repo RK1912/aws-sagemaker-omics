@@ -107,16 +107,28 @@ class OlinkClassifier:
             if fi is not None:
                 fi.sort_values(ascending=False).to_csv(os.path.join("results",f"{name}_feature_importance.csv"))
                 print(f"Feature importance saved: {name}_feature_importance.csv")
+                
+    def upload_folder_to_s3(self,local_folder, bucket, s3_prefix):
+        s3 = boto3.client("s3")
+        for root, _, files in os.walk(local_folder):
+            for filename in files:
+                local_path = os.path.join(root, filename)
+                relative_path = os.path.relpath(local_path, local_folder)
+                s3_path = f"{s3_prefix}/{relative_path}"
+                s3.upload_file(local_path, bucket, s3_path)
+                print(f"Uploaded: {s3_path}")
+
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--s3_input', type=str, required=True, help="S3 path to input CSV")
     args = parser.parse_args()
+    s3_input = "s3://omics-ml/olink_COVID_19_data_labelled.csv"
 
     os.makedirs("results", exist_ok=True)
 
-    #local_csv = "./Olink proteomics in COVID-19/olink_COVID_19_data_labelled.csv"
+    local_csv = "./olink_COVID_19_data_labelled.csv"
 
     clf = OlinkClassifier(data_path=args.s3_input)
     clf.load_data()
@@ -137,3 +149,7 @@ if __name__ == "__main__":
 
     # Save summary
     clf.generate_report()
+    
+    clf.upload_folder_to_s3("results", "omics-ml", "results")
+    clf.upload_folder_to_s3("plots", "omics-ml", "plots")
+

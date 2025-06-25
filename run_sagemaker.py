@@ -12,7 +12,7 @@ role = os.getenv("SAGEMAKER_ROLE")
 # --- Configuration ---
 bucket = "omics-ml"
 script_input_path = f"s3://{bucket}/olink_COVID_19_data_labelled.csv"
-output_path = f"s3://{bucket}/sagemaker-output"
+output_path = "s3://omics-ml/sagemaker-output"
 
 # --- SageMaker session ---
 sagemaker_session = sagemaker.Session()
@@ -22,14 +22,14 @@ region = boto3.Session().region_name
 sklearn_estimator = SKLearn(
     entry_point="train.py",
     source_dir=".",  # assumes train.py + other files are in this directory
+    instance_type="ml.m4.xlarge",  # free tier eligible
+    framework_version="1.0-1",   
     role=role,
-    instance_type="ml.m5.large",  # free tier eligible
-    framework_version="0.23-1",   
     py_version="py3",
     output_path=output_path,
     base_job_name="olink-covid-model",
     hyperparameters={
-        "s3_input": script_input_path
+         "s3_input": script_input_path
     }
 )
 
