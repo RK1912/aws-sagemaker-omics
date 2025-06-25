@@ -8,13 +8,15 @@ from scipy.stats import zscore
 import os
 
 def run_eda(df, target_col='Label', output_dir='plots'):
-    os.makedirs(os.path.join("results",output_dir), exist_ok=True)
+    
+    outdir = os.path.join("results", output_dir)
+    os.makedirs(outdir, exist_ok=True)  
 
     # --- 1. Label Distribution ---
     plt.figure()
     sns.countplot(x=target_col, data=df)
     plt.title("Class Distribution")
-    plt.savefig(f"{output_dir}/label_distribution.png")
+    plt.savefig(f"{outdir}/label_distribution.png")
     plt.close()
     print("✅ Label distribution saved.")
 
@@ -31,7 +33,7 @@ def run_eda(df, target_col='Label', output_dir='plots'):
     plt.figure()
     sns.scatterplot(data=pca_df, x='PC1', y='PC2', hue='Label')
     plt.title("PCA - 2 Component Projection")
-    plt.savefig(f"{output_dir}/pca_scatter.png")
+    plt.savefig(f"{outdir}/pca_scatter.png")
     plt.close()
     print("✅ PCA scatter plot saved.")
 
@@ -43,7 +45,7 @@ def run_eda(df, target_col='Label', output_dir='plots'):
     plt.figure()
     sns.scatterplot(x=components[:, 0], y=components[:, 1], hue=yhat, palette='coolwarm')
     plt.title("Outliers via Isolation Forest (on PCA)")
-    plt.savefig(f"{output_dir}/outliers_isolation_forest.png")
+    plt.savefig(f"{outdir}/outliers_isolation_forest.png")
     plt.close()
     print("✅ Isolation Forest outlier plot saved.")
 
@@ -56,12 +58,12 @@ def run_eda(df, target_col='Label', output_dir='plots'):
     plt.figure()
     sns.scatterplot(x=components[:, 0], y=components[:, 1], hue=df['Outlier_zscore'], palette='coolwarm')
     plt.title("Outliers via Z-score (on PCA)")
-    plt.savefig(f"{output_dir}/outliers_zscore.png")
+    plt.savefig(f"{outdir}/outliers_zscore.png")
     plt.close()
     print("✅ Z-score outlier plot saved.")
 
     # --- Optional: Summary statistics ---
-    df.describe().to_csv(f"{output_dir}/summary_stats.csv")
-    print("📄 Summary statistics saved.")
+    df.describe().to_csv("results/summary_stats.csv")
+    print("Summary statistics saved.")
 
     return df  # In case caller wants to use this processed df
