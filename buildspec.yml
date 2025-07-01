@@ -8,13 +8,14 @@ phases:
       - echo "Installing minimal dependencies for pipeline trigger..."
       - pip install --upgrade pip
       
-      # Only install what trigger.py actually needs
-      - pip install sagemaker>=2.200.0,<3.0.0
-      - pip install boto3>=1.26.0,<2.0.0
-      - pip install pydantic>=2.0.0,<3.0.0
+      # Use specific versions to avoid shell interpretation issues
+      - pip install sagemaker==2.210.0
+      - pip install boto3==1.28.17
+      - pip install pydantic==2.5.0
       
       # Verify core packages are available
-      - python -c "import sagemaker, boto3; print('✅ Core packages ready for trigger.py')"
+      - python -c "import sagemaker, boto3, pydantic; print('✅ Core packages ready for trigger.py')"
+      - python -c "import sagemaker; print(f'SageMaker version: {sagemaker.__version__}')"
 
   pre_build:
     commands:
@@ -27,7 +28,7 @@ phases:
       - echo "🚀 Executing OLINK classification pipeline..."
       
       # The SageMaker containers will install their own requirements at runtime
-      - echo "matplotlib and other ML packages will be installed in SageMaker containers"
+      - echo "Note: matplotlib and other ML packages will be installed in SageMaker containers"
       - python scripts/trigger.py
         
   post_build:
@@ -37,5 +38,5 @@ phases:
       
 artifacts:
   files:
-    - '**/*'  # Include all files for reference
+    - '**/*'
   base-directory: '.'
