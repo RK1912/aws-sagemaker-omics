@@ -1,12 +1,5 @@
 version: 0.2
 
-env:
-  variables:
-    PYTHONPATH: "/codebuild/output/src"
-    PROJECT_NAME: "olink-classification"
-  parameter-store:
-    NOTIFICATION_EMAIL: "/olink/notification-email"
-
 phases:
   install:
     runtime-versions:
@@ -36,14 +29,6 @@ phases:
       - echo "📊 Post-build phase started on $(date)"
       
 artifacts:
-  
-cache:
-  paths:
-    - '/root/.cache/pip/**/*'
-    - 'models/**/*'
-
-reports:
-  
   files:
     - pipeline-output/*
 
