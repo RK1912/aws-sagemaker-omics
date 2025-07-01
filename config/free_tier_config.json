@@ -1,0 +1,72 @@
+{
+  "project": {
+    "name": "olink-classification",
+    "description": "OLINK COVID-19 Classification ML Pipeline - Free Tier Optimized",
+    "version": "2.0.0",
+    "owner": "Ramya Mallela"
+    
+  },
+  "environment": "free-tier",
+  "aws": {
+    "region": "ap-south-1",
+    "account_id": "",
+    "bucket": "omics-ml",
+    "sagemaker_role": "SAGEMAKER_ROLE"
+    
+  },
+  "pipeline": {
+    "name": "olink-classification-pipeline",
+    "description": "End-to-end pipeline for OLINK COVID-19 classification"
+  },
+  "instances": {
+    "processing": {
+      "type": "ml.m4.xlarge",
+      "count": 1,
+      "volume_size_gb": 30,
+      "max_runtime_seconds": 3600
+    },
+    "training": {
+      "type": "ml.m4.xlarge",
+      "count": 1,
+      "volume_size_gb": 30,
+      "max_runtime_seconds": 3600,
+      "use_spot_instances": true,
+      "max_wait_seconds": 7200
+    },
+    "inference": {
+      "type": "ml.m4.xlarge"
+    },
+    "notebook": {
+      "type": "ml.t3.medium",
+      "volume_size_gb": 20
+    }
+  },
+  "cost_controls": {
+    "max_monthly_spend_usd": 50,
+    "auto_stop_inactive_hours": 2,
+    "cleanup_temp_resources": true,
+    "use_spot_instances": true,
+    "enable_cost_alerts": true
+  },
+  "model_registry": {
+    "group_name": "olink-classification-models",
+    "approval_thresholds": {
+      "accuracy": 0.85,
+      "f1_score": 0.80,
+      "auc": 0.85
+    },
+    "auto_approve": false
+  },
+  "monitoring": {
+    "email": "your-email@example.com",
+    "slack_webhook": "",
+    "enable_dashboard": true,
+    "metrics_retention_days": 30
+  },
+  "data": {
+    "input_prefix": "data/raw",
+    "processed_prefix": "data/processed",
+    "output_prefix": "results",
+    "model_artifacts_prefix": "models"
+  }
+}
