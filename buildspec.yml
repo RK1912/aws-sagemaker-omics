@@ -10,19 +10,18 @@ env:
 phases:
   install:
     runtime-versions:
-      python: 3.8
+      python: 3.9
     commands:
       - echo "Installing dependencies for OLINK classification pipeline..."
-      - echo "Installing python 3.8..."
-      - pyenv install 3.8.18
-      - pyenv global 3.8.18
+      - echo "Installing python 3.9..."
+      - pyenv install 3.9
+      - pyenv global 3.9
       - pip install --upgrade pip
       - pip install -r requirements.txt
 
   pre_build:
     commands:
       - echo "🏗️ Pre-build phase started on $(date)"
-      - echo "📧 Notification email from parameter store - $NOTIFICATION_EMAIL"
       
   build:
     commands:
@@ -30,39 +29,24 @@ phases:
       - echo "🚀 Executing OLINK classification pipeline..."
       
       - echo "🔧 Direct SageMaker pipeline execution..."
-        python scripts/execute_sagemaker_pipeline.py \
-        --config config/free_tier_config.json \
-        --data-uri s3://$BUCKET_NAME/data/olink_covid_data.csv \
-        --execution-name "codebuild-$(date +%Y%m%d-%H%M%S)" \
-        --wait
-
+      - python scripts/trigger.py
+        
   post_build:
     commands:
       - echo "📊 Post-build phase started on $(date)"
       
 artifacts:
-  files:
-    - pipeline_results.json
-    - cost_report.json
-    - monitoring_report.json
-    - config/free_tier_config.json
-    - '**/*'
-  name: olink-pipeline-artifacts-$(date +%Y%m%d-%H%M%S)
-
+  
 cache:
   paths:
     - '/root/.cache/pip/**/*'
     - 'models/**/*'
 
 reports:
-  pipeline_report:
-    files:
-      - 'pipeline_results.json'
-    file-format: 'JSON'
-  cost_report:
-    files:
-      - 'cost_report.json'
-    file-format: 'JSON'
+  
+  files:
+    - pipeline-output/*
 
+  
 ---
 
