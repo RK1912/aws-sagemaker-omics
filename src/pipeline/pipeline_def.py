@@ -26,6 +26,8 @@ from sagemaker.xgboost.estimator import XGBoost
 from sagemaker.model_metrics import MetricsSource, ModelMetrics
 from sagemaker.workflow.properties import PropertyFile
 from sagemaker.inputs import TrainingInput
+from sagemaker.processing import ScriptProcessor, ProcessingInput, ProcessingOutput
+
 import json
 import os
 
@@ -85,12 +87,12 @@ class OLINKPipeline:
         # Instance parameters (Free Tier optimized)
         self.processing_instance_type = ParameterString(
             name="ProcessingInstanceType",
-            default_value="ml.t3.medium"  
+            default_value="ml.m5.xlarge"  # Free Tier eligible
         )
         
         self.training_instance_type = ParameterString(
             name="TrainingInstanceType", 
-            default_value="ml.t3.medium"  
+            default_value="ml.m5.xlarge"  # Free Tier eligible
         )
         
         
@@ -126,15 +128,19 @@ class OLINKPipeline:
         Create data preprocessing step
         """
         
-        # SKLearn processor for preprocessing (Free Tier optimized)
+        # Use SKLearnProcessor with additional package installation
         sklearn_processor = SKLearnProcessor(
-            framework_version="1.0-1",
+            framework_version="1.2-1",
             instance_type=self.processing_instance_type,
             instance_count=self.instance_count,
             base_job_name="olink-preprocessing",
             role=self.role,
             sagemaker_session=self.pipeline_session,
-            max_runtime_in_seconds=3600  # 1 hour limit for cost control
+            max_runtime_in_seconds=3600,  # 1 hour limit for cost control
+            # Add additional packages via environment variables
+            env={
+                'INSTALL_PACKAGES': 'matplotlib seaborn plotly scipy'
+            }
         )
         
         preprocessing_step = ProcessingStep(
@@ -145,6 +151,12 @@ class OLINKPipeline:
                     source=self.input_data_uri,
                     destination="/opt/ml/processing/input",
                     input_name="raw_data"
+                ),
+                # Include requirements.txt as an input
+                ProcessingInput(
+                    source="requirements.txt",
+                    destination="/opt/ml/processing/code/requirements.txt",
+                    input_name="requirements"
                 )
             ],
             outputs=[
@@ -175,7 +187,8 @@ class OLINKPipeline:
                 "--test-split-ratio", "0.2",
                 "--validation-split-ratio", "0.1",
                 "--apply-pca", "true",
-                "--detect-outliers", "true"
+                "--detect-outliers", "true",
+                "--requirements-path", "/opt/ml/processing/code/requirements.txt"
             ]
         )
         
@@ -189,7 +202,7 @@ class OLINKPipeline:
         # XGBoost estimator using built-in container
         xgb_estimator = XGBoost(
             entry_point="src/training/train_xgboost.py",
-            framework_version="1.0-1",
+            framework_version="1.7-1",  # Updated version
             instance_type=self.training_instance_type,
             instance_count=1,
             role=self.role,
@@ -233,7 +246,7 @@ class OLINKPipeline:
         # SKLearn estimator for Logistic Regression
         lr_estimator = SKLearn(
             entry_point="src/training/train_logistic_regression.py",
-            framework_version="1.0-1", 
+            framework_version="1.2-1",  # Updated version
             py_version="py3",
             instance_type=self.training_instance_type,
             role=self.role,
@@ -274,15 +287,18 @@ class OLINKPipeline:
         Enhanced from your existing comparison logic
         """
         
-        # Evaluation processor
+        # Evaluation processor with package installation
         eval_processor = SKLearnProcessor(
-            framework_version="1.0-1",
+            framework_version="1.2-1",
             instance_type=self.processing_instance_type,
             instance_count=self.instance_count,
             base_job_name="olink-model-evaluation",
             role=self.role,
             sagemaker_session=self.pipeline_session,
-            max_runtime_in_seconds=1800  # 30 minutes
+            max_runtime_in_seconds=1800,  # 30 minutes
+            env={
+                'INSTALL_PACKAGES': 'matplotlib seaborn plotly scipy'
+            }
         )
         
         # Property file for evaluation results
@@ -315,6 +331,12 @@ class OLINKPipeline:
                     source=preprocessing_step.properties.ProcessingOutputConfig.Outputs["baseline_data"].S3Output.S3Uri,
                     destination="/opt/ml/processing/baseline",
                     input_name="baseline_data"
+                ),
+                # Include requirements.txt
+                ProcessingInput(
+                    source="requirements.txt",
+                    destination="/opt/ml/processing/code/requirements.txt",
+                    input_name="requirements"
                 )
             ],
             outputs=[
@@ -330,6 +352,7 @@ class OLINKPipeline:
                 )
             ],
             code="src/training/model_evaluation.py",
+            job_arguments=["--requirements-path", "/opt/ml/processing/code/requirements.txt"],
             property_files=[evaluation_report]
         )
         
@@ -368,7 +391,7 @@ class OLINKPipeline:
                 content_types=["text/csv"],
                 response_types=["text/csv"], 
                 inference_instances=["ml.m4.xlarge", "ml.m5.xlarge"],  # Free Tier eligible
-                transform_instances=["ml.m4.xlarge"],
+                transform_instances=["ml.m4.xlarge", "ml.m5.xlarge"],  # Free Tier eligible
                 model_package_group_name="olink-classification-models",
                 approval_status=self.model_approval_status,
                 model_metrics=model_metrics,

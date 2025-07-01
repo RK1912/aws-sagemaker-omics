@@ -1,7 +1,81 @@
+#!/usr/bin/env python3
+
+import subprocess
+import sys
+import os
+
+def install_requirements_at_runtime():
+    """Install requirements from the requirements file passed as input to SageMaker"""
+    print("🔧 Installing requirements at runtime...")
+    
+    # Debug: Check what's available
+    print(f"Current directory: {os.getcwd()}")
+    print("Available files and directories:")
+    for item in ['/opt/ml/processing', '/opt/ml/processing/code', '/opt/ml', '.']:
+        if os.path.exists(item):
+            try:
+                contents = os.listdir(item)
+                print(f"  {item}: {contents}")
+            except Exception as e:
+                print(f"  {item}: Error listing - {e}")
+    
+    # Try multiple possible locations for requirements.txt
+    requirements_paths = [
+        '/opt/ml/processing/code/requirements.txt',  # Expected from pipeline
+        '/opt/ml/processing/input/requirements.txt', # Alternative location
+        '/opt/ml/code/requirements.txt',             # Another alternative
+        'requirements.txt',                          # Current directory
+        './requirements.txt'                         # Explicit relative path
+    ]
+    
+    requirements_installed = False
+    for req_path in requirements_paths:
+        if os.path.exists(req_path):
+            try:
+                print(f"📦 Found requirements.txt at: {req_path}")
+                # Show preview of file contents
+                with open(req_path, 'r') as f:
+                    preview = f.readlines()[:3]
+                    print(f"Preview: {[line.strip() for line in preview]}")
+                
+                print(f"📦 Installing from {req_path}...")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_path])
+                print("✅ Requirements installed from file")
+                requirements_installed = True
+                break
+            except subprocess.CalledProcessError as e:
+                print(f"⚠️ Failed to install from {req_path}: {e}")
+                continue
+        else:
+            print(f"❌ Not found: {req_path}")
+    
+    if not requirements_installed:
+        # Fallback - install essential packages
+        print("📦 Installing essential packages manually...")
+        essential_packages = ['matplotlib>=3.5.0', 'seaborn>=0.11.2', 'plotly>=5.0.0', 'scipy>=1.7.0']
+        for package in essential_packages:
+            try:
+                print(f"Installing {package}...")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+                print(f"✅ {package} installed")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Failed to install {package}: {e}")
+    
+    # Set matplotlib backend for SageMaker (no display)
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        print("✅ matplotlib backend set to 'Agg'")
+    except ImportError:
+        print("⚠️ matplotlib not available")
+
+# Install requirements first, before any other imports
+install_requirements_at_runtime()
+
+# Now import everything else
 import argparse
 import pandas as pd
 import numpy as np
-import os
 import json
 import logging
 from sklearn.model_selection import train_test_split
@@ -37,6 +111,11 @@ def main():
     parser.add_argument('--pca-components', type=int, default=10)
     parser.add_argument('--outlier-contamination', type=float, default=0.1)
     parser.add_argument('--random-state', type=int, default=42)
+    
+    # Runtime installation argument (from pipeline)
+    parser.add_argument('--requirements-path', type=str, 
+                       default='/opt/ml/processing/code/requirements.txt',
+                       help='Path to requirements.txt file')
     
     args = parser.parse_args()
     

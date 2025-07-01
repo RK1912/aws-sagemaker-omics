@@ -5,33 +5,37 @@ phases:
     runtime-versions:
       python: 3.9
     commands:
-      - echo "Installing dependencies for OLINK classification pipeline..."
-      - echo "Installing python 3.9..."
-      - pyenv install 3.9
-      - pyenv global 3.9
+      - echo "Installing minimal dependencies for pipeline trigger..."
       - pip install --upgrade pip
-      - pip install -r requirements.txt
+      
+      # Only install what trigger.py actually needs
+      - pip install sagemaker>=2.200.0,<3.0.0
+      - pip install boto3>=1.26.0,<2.0.0
+      - pip install pydantic>=2.0.0,<3.0.0
+      
+      # Verify core packages are available
+      - python -c "import sagemaker, boto3; print('✅ Core packages ready for trigger.py')"
 
   pre_build:
     commands:
       - echo "🏗️ Pre-build phase started on $(date)"
+      - aws sts get-caller-identity
       
   build:
     commands:
       - echo "🔄 Build phase started on $(date)"
       - echo "🚀 Executing OLINK classification pipeline..."
       
-      - echo "🔧 Direct SageMaker pipeline execution..."
+      # The SageMaker containers will install their own requirements at runtime
+      - echo "matplotlib and other ML packages will be installed in SageMaker containers"
       - python scripts/trigger.py
         
   post_build:
     commands:
-      - echo "📊 Post-build phase started on $(date)"
+      - echo "📊 Post-build phase completed on $(date)"
+      - echo "Pipeline successfully triggered - check SageMaker Console for execution status"
       
 artifacts:
   files:
-    - pipeline-output/*
-
-  
----
-
+    - '**/*'  # Include all files for reference
+  base-directory: '.'
