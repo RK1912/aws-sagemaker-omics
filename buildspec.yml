@@ -1,5 +1,9 @@
 version: 0.2
 
+env:
+  variables:
+    SAGEMAKER_IMAGE_URI: "public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu"
+  
 phases:
   install:
     runtime-versions:
@@ -16,18 +20,23 @@ phases:
     commands:
       - echo "Pre-build phase started"
       - aws sts get-caller-identity
-      
+
   build:
     commands:
       - echo "Build phase started"
       - echo "Executing OLINK classification pipeline"
       - python scripts/trigger.py
-        
+
   post_build:
     commands:
-      - echo "Post-build phase completed"
+      - echo "📊 Post-build phase started on $(date)"
       
 artifacts:
   files:
     - '**/*'
-  base-directory: '.'
+  base-directory: '.'    
+---
+
+
+
+
