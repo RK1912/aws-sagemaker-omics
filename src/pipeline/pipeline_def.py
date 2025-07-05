@@ -1,5 +1,33 @@
-# Add this import at the top with your other imports
-from sagemaker.processing import ScriptProcessor
+import boto3
+import sagemaker
+from sagemaker.workflow.pipeline import Pipeline
+from sagemaker.workflow.steps import (
+    ProcessingStep, 
+    TrainingStep, 
+    CreateModelStep,
+    TransformStep
+)
+from sagemaker.workflow.model_step import ModelStep
+from sagemaker.workflow.conditions import ConditionGreaterThanOrEqualTo
+from sagemaker.workflow.condition_step import ConditionStep
+from sagemaker.workflow.functions import JsonGet
+from sagemaker.workflow.parameters import (
+    ParameterInteger,
+    ParameterString,
+    ParameterFloat
+)
+from sagemaker.model import Model
+from sagemaker.workflow.functions import Join
+from sagemaker.workflow.pipeline_context import PipelineSession
+from sagemaker.processing import ProcessingInput, ProcessingOutput, ScriptProcessor  # ADD THIS IMPORT
+from sagemaker.sklearn.processing import SKLearnProcessor
+from sagemaker.sklearn.estimator import SKLearn
+from sagemaker.xgboost.estimator import XGBoost
+from sagemaker.model_metrics import MetricsSource, ModelMetrics
+from sagemaker.workflow.properties import PropertyFile
+from sagemaker.inputs import TrainingInput
+import json
+import os
 
 class OLINKPipeline:
     """
@@ -21,6 +49,77 @@ class OLINKPipeline:
         # Define pipeline parameters
         self._define_parameters()
     
+    def _load_config(self, config_path: str) -> dict:
+        """Load configuration from JSON file"""
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    
+    def _define_parameters(self):
+        """Define pipeline parameters for flexibility"""
+        
+        # Data parameters
+        self.input_data_uri = ParameterString(
+            name="InputDataUri",
+            default_value=f"s3://{self.bucket}/olink_COVID_19_data_labelled.csv"
+        )
+        
+        
+        self.instance_count = ParameterInteger(name="InstanceCount", default_value=1)
+        
+        self.output_prefix = ParameterString(
+            name="OutputPrefix",
+            default_value=f"s3://{self.bucket}/pipeline-output"
+        )
+        
+        # Model approval parameters
+        self.model_approval_status = ParameterString(
+            name="ModelApprovalStatus",
+            default_value="PendingManualApproval"
+        )
+        
+        self.accuracy_threshold = ParameterFloat(
+            name="AccuracyThreshold",
+            default_value=0.85
+        )
+        
+        # Instance parameters (Free Tier optimized)
+        self.processing_instance_type = ParameterString(
+            name="ProcessingInstanceType",
+            default_value="ml.t3.medium"  
+        )
+        
+        self.training_instance_type = ParameterString(
+            name="TrainingInstanceType", 
+            default_value="ml.t3.medium"  
+        )
+        
+        
+        # XGBoost hyperparameters
+        self.xgb_max_depth = ParameterInteger(
+            name="XGBMaxDepth",
+            default_value=6
+        )
+        
+        self.xgb_eta = ParameterFloat(
+            name="XGBEta", 
+            default_value=0.3
+        )
+        
+        self.xgb_num_round = ParameterInteger(
+            name="XGBNumRound",
+            default_value=100
+        )
+        
+        # Logistic Regression hyperparameters
+        self.lr_c = ParameterFloat(
+            name="LRC",
+            default_value=1.0
+        )
+        
+        self.lr_max_iter = ParameterInteger(
+            name="LRMaxIter",
+            default_value=1000
+        )
     
     def create_preprocessing_step(self):
         """
@@ -28,7 +127,7 @@ class OLINKPipeline:
         UPDATED: Use ScriptProcessor with public image for matplotlib support
         """
         
-        # Replace SKLearnProcessor with ScriptProcessor using public image
+        # ScriptProcessor with public image instead of SKLearnProcessor
         script_processor = ScriptProcessor(
             image_uri=os.getenv('SAGEMAKER_IMAGE_URI', 'public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu'),
             command=["python3"],
@@ -40,7 +139,6 @@ class OLINKPipeline:
             max_runtime_in_seconds=3600  # 1 hour limit for cost control
         )
         
-    
         preprocessing_step = ProcessingStep(
             name="PreprocessOLINKData",
             processor=script_processor,  
@@ -85,6 +183,94 @@ class OLINKPipeline:
         
         return preprocessing_step
     
+    def create_xgboost_training_step(self, preprocessing_step):
+        """
+        Create XGBoost training step with your existing logic enhanced
+        UNCHANGED: Still uses built-in XGBoost container
+        """
+        
+        # XGBoost estimator using built-in container
+        xgb_estimator = XGBoost(
+            entry_point="src/training/train_xgboost.py",
+            framework_version="1.0-1",
+            instance_type=self.training_instance_type,
+            instance_count=1,
+            role=self.role,
+            base_job_name="olink-xgboost-training",
+            sagemaker_session=self.pipeline_session,
+            max_runtime_in_seconds=3600,  # 1 hour limit
+            use_spot_instances=True,  # Cost optimization
+            max_wait_time_in_seconds=7200,  # 2 hour max wait
+            hyperparameters={
+                "max_depth": self.xgb_max_depth,
+                "eta": self.xgb_eta,
+                "objective": "binary:logistic", 
+                "eval_metric": "auc",
+                "num_round": self.xgb_num_round,
+                "early_stopping_rounds": 10  
+            }
+        )
+        
+        xgb_training_step = TrainingStep(
+            name="TrainXGBoostModel",
+            estimator=xgb_estimator,
+            inputs={
+                "train": TrainingInput(
+                    s3_data=preprocessing_step.properties.ProcessingOutputConfig.Outputs["train_data"].S3Output.S3Uri,
+                    content_type="text/csv"
+                ),
+                "validation": TrainingInput(
+                    s3_data=preprocessing_step.properties.ProcessingOutputConfig.Outputs["validation_data"].S3Output.S3Uri,
+                    content_type="text/csv"
+                )
+            }
+        )
+        
+        return xgb_training_step
+    
+    def create_logistic_regression_training_step(self, preprocessing_step):
+        """
+        Create Logistic Regression training step 
+        UNCHANGED: Still uses built-in SKLearn container
+        """
+        
+        # SKLearn estimator for Logistic Regression
+        lr_estimator = SKLearn(
+            entry_point="src/training/train_logistic_regression.py",
+            framework_version="1.0-1", 
+            py_version="py3",
+            instance_type=self.training_instance_type,
+            role=self.role,
+            base_job_name="olink-lr-training",
+            sagemaker_session=self.pipeline_session,
+            max_runtime_in_seconds=3600,  # 1 hour limit
+            use_spot_instances=True,  # Cost optimization
+            max_wait_time_in_seconds=7200,
+            hyperparameters={
+                "C": self.lr_c,
+                "max_iter": self.lr_max_iter,
+                "penalty": "l2",
+                "solver": "liblinear",
+                "random_state": 42
+            }
+        )
+        
+        lr_training_step = TrainingStep(
+            name="TrainLogisticRegressionModel",
+            estimator=lr_estimator,
+            inputs={
+                "train": TrainingInput(
+                    s3_data=preprocessing_step.properties.ProcessingOutputConfig.Outputs["train_data"].S3Output.S3Uri,
+                    content_type="text/csv"
+                ),
+                "validation": TrainingInput(
+                    s3_data=preprocessing_step.properties.ProcessingOutputConfig.Outputs["validation_data"].S3Output.S3Uri,
+                    content_type="text/csv"
+                )
+            }
+        )
+        
+        return lr_training_step
     
     def create_evaluation_step(self, preprocessing_step, xgb_step, lr_step):
         """
@@ -92,7 +278,7 @@ class OLINKPipeline:
         UPDATED: Use ScriptProcessor with public image for matplotlib support
         """
         
-        # Replace SKLearnProcessor with ScriptProcessor using public image
+        # ScriptProcessor with public image instead of SKLearnProcessor
         eval_processor = ScriptProcessor(
             image_uri=os.getenv('SAGEMAKER_IMAGE_URI', 'public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu'),
             command=["python3"],
@@ -104,7 +290,7 @@ class OLINKPipeline:
             max_runtime_in_seconds=1800  # 30 minutes
         )
         
-        # Everything else stays exactly the same
+        # Property file for evaluation results
         evaluation_report = PropertyFile(
             name="EvaluationReport",
             output_name="evaluation", 
@@ -113,7 +299,7 @@ class OLINKPipeline:
         
         evaluation_step = ProcessingStep(
             name="EvaluateModels",
-            processor=eval_processor,  #use eval_processor instead of sklearn processor
+            processor=eval_processor,  
             inputs=[
                 ProcessingInput(
                     source=xgb_step.properties.ModelArtifacts.S3ModelArtifacts,
@@ -153,4 +339,5 @@ class OLINKPipeline:
         )
         
         return evaluation_step, evaluation_report
+    
     
