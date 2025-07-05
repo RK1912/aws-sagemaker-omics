@@ -139,8 +139,15 @@ class OLINKPipeline:
         
         # SKLearn processor for preprocessing (Free Tier optimized)
         script_processor = ScriptProcessor(
-    image_uri=os.getenv('SAGEMAKER_IMAGE_URI', 'public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu'),
-    command=["python3"])
+            image_uri=os.getenv('SAGEMAKER_IMAGE_URI', 'public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu'),
+            command=["python3"],
+            instance_type=self.processing_instance_type,
+            instance_count=self.instance_count,
+            base_job_name="olink-preprocessing",
+            role=self.role,
+            sagemaker_session=self.pipeline_session,
+            max_runtime_in_seconds=3600
+        )
         
         preprocessing_step = ProcessingStep(
             name="PreprocessOLINKData",
@@ -281,8 +288,15 @@ class OLINKPipeline:
         
         # Evaluation processor
         eval_processor = ScriptProcessor(
-    image_uri=os.getenv('SAGEMAKER_IMAGE_URI', 'public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu'),
-    command=["python3"])
+            image_uri=os.getenv('SAGEMAKER_IMAGE_URI', 'public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu'),
+            command=["python3"],
+            instance_type=self.processing_instance_type,
+            instance_count=self.instance_count,
+            base_job_name="olink-model-evaluation",
+            role=self.role,
+            sagemaker_session=self.pipeline_session,
+            max_runtime_in_seconds=1800
+        )
         
         # Property file for evaluation results
         evaluation_report = PropertyFile(
