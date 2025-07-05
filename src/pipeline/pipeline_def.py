@@ -39,10 +39,20 @@ class OLINKPipeline:
     def __init__(self, config_path: str = "config/free_tier_config.json"):
         self.config = self._load_config(config_path)
         self.region = self.config['aws']['region']
-        self.role = os.getenv(self.config['aws']['sagemaker_role'])
         self.bucket = self.config['aws']['bucket']
         self.pipeline_name = self.config['pipeline']['name']
+
+        print(f"🔍 Config sagemaker_role: {self.config['aws']['sagemaker_role']}")
+        print(f"🔍 Environment SAGEMAKER_ROLE: {os.getenv('SAGEMAKER_ROLE')}")
+
+        self.role = os.getenv(self.config['aws']['sagemaker_role'])
         
+        # DEBUG
+        print(f"🔍 Final role: {self.role}")
+    
+        if not self.role:
+            raise ValueError(f"❌ No role found! Looking for env var: {self.config['aws']['sagemaker_role']}")
+            
         # Initialize SageMaker session
         self.pipeline_session = PipelineSession()
         self.sagemaker_session = sagemaker.Session()
