@@ -14,18 +14,18 @@ try:
     from src.pipeline.pipeline_def import OLINKPipeline
     import sagemaker
     import boto3
-    print("✅ Successfully imported pipeline definition")
+    print("Successfully imported pipeline definition")
 except ImportError as e:
-    print(f"❌ Import error: {e}")
+    print(f"Import error: {e}")
     print("Make sure you have __init__.py files in src/ and src/pipeline/ folders")
     print("Current working directory:", os.getcwd())
     print("Project root:", project_root)
     sys.exit(1)
 
 def main():
-    print("🚀 OLINK COVID-19 Classification Pipeline Launcher")
+    print("OLINK COVID-19 Classification Pipeline Launcher")
     print("=" * 60)
-    print(f"⏰ Launch time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Launch time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
         # Setup SageMaker session and role
