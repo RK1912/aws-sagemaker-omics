@@ -2,7 +2,7 @@ version: 0.2
 
 env:
   variables:
-    SAGEMAKER_IMAGE_URI: "public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu"
+    SAGEMAKER_IMAGE_URI: "228304386991.dkr.ecr.ap-south-1.amazonaws.com/omics_ml:3.1-cpu"
   
 phases:
   install:
