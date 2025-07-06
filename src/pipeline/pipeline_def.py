@@ -139,7 +139,7 @@ class OLINKPipeline:
         
         # SKLearn processor for preprocessing (Free Tier optimized)
         script_processor = ScriptProcessor(
-            image_uri=os.getenv('SAGEMAKER_IMAGE_URI', 'public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu'),
+            image_uri=os.getenv('SAGEMAKER_IMAGE_URI', '228304386991.dkr.ecr.ap-south-1.amazonaws.com/omics_ml:3.1-cpu'),
             command=["python3"],
             instance_type=self.processing_instance_type,
             instance_count=self.instance_count,
@@ -288,7 +288,7 @@ class OLINKPipeline:
         
         # Evaluation processor
         eval_processor = ScriptProcessor(
-            image_uri=os.getenv('SAGEMAKER_IMAGE_URI', 'public.ecr.aws/sagemaker/sagemaker-distribution:3.1-cpu'),
+            image_uri=os.getenv('SAGEMAKER_IMAGE_URI', '228304386991.dkr.ecr.ap-south-1.amazonaws.com/omics_ml:3.1-cpu'),
             command=["python3"],
             instance_type=self.processing_instance_type,
             instance_count=self.instance_count,
