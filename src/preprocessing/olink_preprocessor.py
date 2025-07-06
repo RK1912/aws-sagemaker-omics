@@ -27,7 +27,7 @@ def main():
     parser.add_argument('--validation-data', type=str, default='/opt/ml/processing/validation')
     parser.add_argument('--test-data', type=str, default='/opt/ml/processing/test')
     parser.add_argument('--baseline-data', type=str, default='/opt/ml/processing/baseline')
-    parser.add_argument('--plots-output', type=str, default='/opt/ml/processing/plots')
+    parser.add_argument('--plots-output', type=str, default='/opt/ml/processing/baseline')
     
     # Processing arguments
     parser.add_argument('--test-split-ratio', type=float, default=0.2)
@@ -158,7 +158,8 @@ def main():
             plt.grid(True, alpha=0.3)
             
             plt.tight_layout()
-            plt.savefig(os.path.join(args.plots_output, 'outlier_detection.png'), dpi=300, bbox_inches='tight')
+            outlier_plot_file = "/opt/ml/processing/baseline/outlier_detection.png"
+            plt.savefig(outlier_plot_file, dpi=300, bbox_inches='tight')
             plt.close()
             
             logger.info(f"🔍 Found {outliers.sum()} outliers ({outliers.sum()/len(X)*100:.1f}%)")
@@ -211,7 +212,8 @@ def main():
             plt.grid(True, alpha=0.3)
             
             plt.tight_layout()
-            plt.savefig(os.path.join(args.plots_output, 'pca_analysis.png'), dpi=300, bbox_inches='tight')
+            pca_plot_file = "/opt/ml/processing/baseline/pca_analysis.png"
+            plt.savefig(pca_plot_file, dpi=300, bbox_inches='tight')
             plt.close()
             
             logger.info(f"🔬 PCA completed. First {args.pca_components} components explain {pca.explained_variance_ratio_[:args.pca_components].sum():.2%} of variance")
