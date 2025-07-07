@@ -11,13 +11,14 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+import subprocess
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def main():
-    """Enhanced OLINK data preprocessing based on your existing EDA"""
+    """Preprocessor script with Exploratory data analysis, outlier detection and splitting data into train and test"""
     
     parser = argparse.ArgumentParser(description='OLINK data preprocessing')
     
@@ -49,11 +50,15 @@ def main():
     os.makedirs(args.baseline_data, exist_ok=True)
     os.makedirs(args.plots_output, exist_ok=True)
     
+    subprocess.check_call(["sudo", "chown", "-R", "sagemaker-user", "/opt/ml/processing/"])
+    
+    
+    
     # Initialize variables
     outliers = None  # Initialize to avoid undefined variable error
     
     try:
-        # Load data (assuming CSV format like your existing project)
+        # Load data 
         logger.info("📖 Loading OLINK dataset...")
         data_files = os.listdir(args.input_data)
         csv_files = [f for f in data_files if f.endswith('.csv')]
@@ -61,7 +66,7 @@ def main():
         if not csv_files:
             raise ValueError("No CSV files found in input directory")
         
-        # Load the first CSV file (adjust if you have multiple files)
+        # Load the first CSV file
         data_path = os.path.join(args.input_data, csv_files[0])
         df = pd.read_csv(data_path)
         
@@ -73,7 +78,7 @@ def main():
         logger.info(f"  - Missing values: {df.isnull().sum().sum()}")
         logger.info(f"  - Duplicate rows: {df.duplicated().sum()}")
         
-        # Identify target column (adjust based on your data structure)
+        # Identify target column
         target_candidates = ['target', 'label', 'class', 'COVID19', 'diagnosis', 'COVID']
         target_column = None
         
@@ -94,7 +99,7 @@ def main():
         X = df.drop(target_column, axis=1)
         y = df[target_column]
         
-        # Handle missing values (basic imputation)
+        # Handle missing values
         if X.isnull().sum().sum() > 0:
             logger.info("🔧 Handling missing values...")
             X = X.fillna(X.median())
@@ -118,7 +123,7 @@ def main():
         
         logger.info(f"📊 Final feature count: {X.shape[1]}")
         
-        # Outlier detection (from your existing logic)
+        # Outlier detection 
         outliers = pd.Series([False] * len(X), index=X.index)  # Initialize outliers
         
         if args.detect_outliers.lower() == 'true':
@@ -136,7 +141,7 @@ def main():
             outlier_labels = iso_forest.fit_predict(X_scaled)
             outliers = pd.Series(outlier_labels == -1, index=X.index)
             
-            # Create outlier plots (like your existing visualization)
+            # Create outlier plots 
             plt.figure(figsize=(12, 5))
             
             # Plot 1: Outlier scores
@@ -164,12 +169,12 @@ def main():
             
             logger.info(f"🔍 Found {outliers.sum()} outliers ({outliers.sum()/len(X)*100:.1f}%)")
             
-            # Option to remove outliers (uncomment if needed)
+            # Option to remove outliers
             # X = X[~outliers]
             # y = y[~outliers]
             # logger.info(f"📊 Data shape after outlier removal: {X.shape}")
         
-        # PCA Analysis (from your existing logic)
+        # PCA Analysis 
         if args.apply_pca.lower() == 'true':
             logger.info("🔬 Applying PCA analysis...")
             
@@ -181,7 +186,7 @@ def main():
             pca = PCA(n_components=min(args.pca_components, X.shape[1]))
             X_pca = pca.fit_transform(X_scaled)
             
-            # Create PCA plots (like your existing visualization)
+            # Create PCA plots 
             plt.figure(figsize=(15, 5))
             
             # Plot 1: Explained variance
@@ -243,10 +248,10 @@ def main():
         logger.info(f"  - Validation: {X_val.shape[0]} samples") 
         logger.info(f"  - Test: {X_test.shape[0]} samples")
         
-        # FIXED: Save data in SageMaker format (target first, no headers for training compatibility)
+        # Save data in SageMaker format (target first, no headers for training compatibility)
         logger.info("💾 Saving processed datasets...")
         
-        # Prepare datasets with target column first (SageMaker standard)
+        # Prepare datasets with target column first (SageMaker standard requirement)
         train_final = pd.concat([y_train, X_train], axis=1)
         val_final = pd.concat([y_val, X_val], axis=1)
         test_final = pd.concat([y_test, X_test], axis=1)
@@ -286,7 +291,7 @@ def main():
         with open(os.path.join(args.baseline_data, 'preprocessing_info.json'), 'w') as f:
             json.dump(preprocessing_info, f, indent=2)
         
-        # Also save feature names for reference
+        # Save feature names for reference
         feature_info = {
             'target_column': target_column,
             'feature_names': X.columns.tolist(),

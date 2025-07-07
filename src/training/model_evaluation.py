@@ -10,9 +10,11 @@ from sklearn.metrics import (
     accuracy_score, f1_score, roc_auc_score, precision_score, recall_score,
     classification_report, confusion_matrix, roc_curve
 )
+from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+import subprocess
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,77 +22,182 @@ logger = logging.getLogger(__name__)
 def load_model_artifacts(model_dir, model_type):
     """Load model artifacts from SageMaker training job"""
     
+    logger.info(f"🔍 Looking for {model_type} model in: {model_dir}")
+    
+    # extract model.tar.gz 
+    tar_file = os.path.join(model_dir, 'model.tar.gz')
+    if os.path.exists(tar_file):
+        logger.info("📦 Found model.tar.gz, extracting...")
+        import tarfile
+        with tarfile.open(tar_file, 'r:gz') as tar:
+            tar.extractall(model_dir)
+    
+    logger.info(f"📁 Contents of {model_dir}: {os.listdir(model_dir)}")
+    
     if model_type.lower() == 'xgboost':
-        # Try to load XGBoost model
-        xgb_model_path = os.path.join(model_dir, 'xgboost-model')
-        if os.path.exists(xgb_model_path):
-            model = xgb.Booster()
-            model.load_model(xgb_model_path)
-            return model, None
-        else:
-            # Fallback to pickle
-            model = joblib.load(os.path.join(model_dir, 'XGBoost_model.pkl'))
-            return model, None
+        # Load XGBoost model
+        possible_files = ['xgboost-model', 'XGBoost_model.pkl', 'model.joblib', 'model.pkl']
+        model = None
+        
+        for filename in possible_files:
+            filepath = os.path.join(model_dir, filename)
+            if os.path.exists(filepath):
+                logger.info(f"✅ Found XGBoost model: {filename}")
+                if filename == 'xgboost-model':
+                    model = xgb.Booster()
+                    model.load_model(filepath)
+                else:
+                    model = joblib.load(filepath)
+                break
+        
+        # Load label encoder
+        label_encoder = None
+        encoder_files = ['label_encoder.joblib', 'label_encoder.pkl']
+        for filename in encoder_files:
+            filepath = os.path.join(model_dir, filename)
+            if os.path.exists(filepath):
+                label_encoder = joblib.load(filepath)
+                logger.info(f"✅ Found XGBoost label encoder: {filename}")
+                break
+        
+        if model is None:
+            raise FileNotFoundError(f"No XGBoost model found in {model_dir}")
+        
+        return model, None, label_encoder
             
     elif model_type.lower() == 'logistic_regression':
-        model = joblib.load(os.path.join(model_dir, 'LogisticRegression_model.pkl'))
-        scaler = joblib.load(os.path.join(model_dir, 'scaler.pkl'))
-        return model, scaler
+        # Load Logistic Regression model
+        model_files = ['model.joblib', 'LogisticRegression_model.pkl', 'model.pkl']
+        scaler_files = ['scaler.joblib', 'scaler.pkl']
+        encoder_files = ['label_encoder.joblib', 'label_encoder.pkl']
+        
+        model = None
+        scaler = None
+        label_encoder = None
+        
+        for filename in model_files:
+            filepath = os.path.join(model_dir, filename)
+            if os.path.exists(filepath):
+                model = joblib.load(filepath)
+                logger.info(f"✅ Found LR model: {filename}")
+                break
+        
+        for filename in scaler_files:
+            filepath = os.path.join(model_dir, filename)
+            if os.path.exists(filepath):
+                scaler = joblib.load(filepath)
+                logger.info(f"✅ Found LR scaler: {filename}")
+                break
+                
+        for filename in encoder_files:
+            filepath = os.path.join(model_dir, filename)
+            if os.path.exists(filepath):
+                label_encoder = joblib.load(filepath)
+                logger.info(f"✅ Found LR label encoder: {filename}")
+                break
+        
+        if model is None:
+            raise FileNotFoundError(f"No Logistic Regression model found in {model_dir}")
+        if scaler is None:
+            raise FileNotFoundError(f"No scaler found in {model_dir}")
+        
+        return model, scaler, label_encoder
     
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
-def evaluate_model(model, scaler, X_test, y_test, model_type):
+def encode_labels(y_test, model_label_encoder, model_type):
+    """Encode labels consistently for evaluation"""
+    
+    # Check labels for inconsistencies
+    if y_test.dtype == 'object' or y_test.dtype.name == 'string':
+        logger.info(f"🔄 Converting string labels for {model_type}...")
+        logger.info(f"🔢 Original test labels: {y_test.unique()}")
+        
+        if model_label_encoder is not None:
+            # Use the model's label encoder
+            logger.info(f"✅ Using saved label encoder. Classes: {model_label_encoder.classes_}")
+            y_encoded = model_label_encoder.transform(y_test)
+            label_mapping = dict(zip(model_label_encoder.classes_, model_label_encoder.transform(model_label_encoder.classes_)))
+            logger.info(f"🔢 Label mapping: {label_mapping}")
+        else:
+            # Create a new label encoder
+            logger.info("⚠️ No saved label encoder found. Creating new one.")
+            encoder = LabelEncoder()
+            y_encoded = encoder.fit_transform(y_test)
+            label_mapping = dict(zip(encoder.classes_, encoder.transform(encoder.classes_)))
+            logger.info(f"🔢 New label mapping: {label_mapping}")
+    else:
+        # Already numeric
+        y_encoded = pd.to_numeric(y_test, errors='coerce').astype(int)
+        if y_encoded.isna().any():
+            raise ValueError("Unable to convert test labels to numeric")
+    
+    logger.info(f"🎯 Encoded labels: {np.unique(y_encoded)}")
+    return y_encoded
+
+def evaluate_single_model(model, scaler, X_test, y_test_encoded, model_type):
     """Evaluate a single model and return metrics"""
     
+    # Ensure features are numeric
+    X_test_numeric = X_test.apply(pd.to_numeric, errors='coerce')
+    if X_test_numeric.isna().any().any():
+        logger.warning("⚠️ Found NaN values in test features. Filling with 0.")
+        X_test_numeric = X_test_numeric.fillna(0)
+    
+    # Make predictions based on model type
     if model_type.lower() == 'xgboost':
-        # Check if it's a Booster or sklearn-style model
         if hasattr(model, 'predict_proba'):
             # XGBoost sklearn-style interface
-            y_pred_prob = model.predict_proba(X_test)[:, 1]
-            y_pred = model.predict(X_test)
-        elif hasattr(model, 'get_booster') or str(type(model)).find('Booster') != -1:
-            # XGBoost Booster interface - needs DMatrix
-            dtest = xgb.DMatrix(X_test)
+            y_pred_prob = model.predict_proba(X_test_numeric)[:, 1]
+            y_pred = model.predict(X_test_numeric)
+        elif hasattr(model, 'get_booster') or 'Booster' in str(type(model)):
+            # XGBoost Booster interface
+            dtest = xgb.DMatrix(X_test_numeric)
             y_pred_prob = model.predict(dtest)
             y_pred = (y_pred_prob > 0.5).astype(int)
         else:
-            # Try joblib-loaded XGBoost model
+            
             try:
-                # Try sklearn interface first
-                y_pred_prob = model.predict_proba(X_test)[:, 1]
-                y_pred = model.predict(X_test)
+                y_pred_prob = model.predict_proba(X_test_numeric)[:, 1]
+                y_pred = model.predict(X_test_numeric)
             except:
-                # Fall back to DMatrix
-                dtest = xgb.DMatrix(X_test)
+                dtest = xgb.DMatrix(X_test_numeric)
                 y_pred_prob = model.predict(dtest)
                 y_pred = (y_pred_prob > 0.5).astype(int)
         
     elif model_type.lower() == 'logistic_regression':
-        X_test_scaled = scaler.transform(X_test)
+        X_test_scaled = scaler.transform(X_test_numeric)
         y_pred = model.predict(X_test_scaled)
         y_pred_prob = model.predict_proba(X_test_scaled)[:, 1]
     
-    # Calculate metrics
+    # Ensure predictions are integers
+    y_pred = np.array(y_pred).astype(int)
+    y_test_encoded = np.array(y_test_encoded).astype(int)
+    
+    logger.info(f"🔮 {model_type} predictions: shape={y_pred.shape}, unique={np.unique(y_pred)}")
+    logger.info(f"🎯 Test labels: shape={y_test_encoded.shape}, unique={np.unique(y_test_encoded)}")
+    
+    # Calculate metrics 
     metrics = {
-        'accuracy': float(accuracy_score(y_test, y_pred)),
-        'precision': float(precision_score(y_test, y_pred)),
-        'recall': float(recall_score(y_test, y_pred)),
-        'f1_score': float(f1_score(y_test, y_pred)),
-        'auc': float(roc_auc_score(y_test, y_pred_prob))
+        'accuracy': float(accuracy_score(y_test_encoded, y_pred)),
+        'precision': float(precision_score(y_test_encoded, y_pred, zero_division=0)),
+        'recall': float(recall_score(y_test_encoded, y_pred, zero_division=0)),
+        'f1_score': float(f1_score(y_test_encoded, y_pred, zero_division=0)),
+        'auc': float(roc_auc_score(y_test_encoded, y_pred_prob))
     }
     
     # Classification report
-    class_report = classification_report(y_test, y_pred, output_dict=True)
+    class_report = classification_report(y_test_encoded, y_pred, output_dict=True)
     
     # Confusion matrix
-    cm = confusion_matrix(y_test, y_pred)
+    cm = confusion_matrix(y_test_encoded, y_pred)
     
     return metrics, class_report, cm, y_pred, y_pred_prob
 
 def create_comparison_plots(xgb_metrics, lr_metrics, xgb_cm, lr_cm, 
-                          y_test, xgb_probs, lr_probs, output_dir):
-    """Create comparison plots (enhanced from your existing visualization)"""
+                          y_test_encoded, xgb_probs, lr_probs, output_dir):
+    """Create comparison plots"""
     
     # Create figure with subplots
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
@@ -126,10 +233,8 @@ def create_comparison_plots(xgb_metrics, lr_metrics, xgb_cm, lr_cm,
     axes[0, 2].set_ylabel('Actual')
     
     # 4. ROC Curves
-    from sklearn.metrics import roc_curve
-    
-    xgb_fpr, xgb_tpr, _ = roc_curve(y_test, xgb_probs)
-    lr_fpr, lr_tpr, _ = roc_curve(y_test, lr_probs)
+    xgb_fpr, xgb_tpr, _ = roc_curve(y_test_encoded, xgb_probs)
+    lr_fpr, lr_tpr, _ = roc_curve(y_test_encoded, lr_probs)
     
     axes[1, 0].plot(xgb_fpr, xgb_tpr, label=f'XGBoost (AUC = {xgb_metrics["auc"]:.3f})', color='blue')
     axes[1, 0].plot(lr_fpr, lr_tpr, label=f'Logistic Regression (AUC = {lr_metrics["auc"]:.3f})', color='red')
@@ -187,7 +292,12 @@ def main():
     os.makedirs(args.plots_output, exist_ok=True)
     
     try:
-        # FIXED: Load test data without headers
+        subprocess.check_call(["sudo", "chown", "-R", "sagemaker-user", "/opt/ml/processing/"])
+    except:
+        pass  # Ignore permission errors
+    
+    try:
+        # Load test data
         logger.info("📖 Loading test data...")
         test_files = [f for f in os.listdir(args.test_data) if f.endswith('.csv')]
         if not test_files:
@@ -195,31 +305,34 @@ def main():
         
         test_df = pd.read_csv(os.path.join(args.test_data, test_files[0]), header=None)
         
-        # FIXED: Handle data without headers (SageMaker standard format)
-        # First column is target, rest are features
+        # Handle data without headers (SageMaker standard format)
         X_test = test_df.iloc[:, 1:]  # All columns except first
         y_test = test_df.iloc[:, 0]   # First column is target
         
         logger.info(f"📊 Test data shape: {X_test.shape}")
         logger.info(f"🎯 Test target distribution: {y_test.value_counts().to_dict()}")
         
-        # Load models
+        # Load models (keeping original return format for compatibility)
         logger.info("🔄 Loading XGBoost model...")
-        xgb_model, _ = load_model_artifacts(args.xgboost_model, 'xgboost')
+        xgb_model, _, xgb_label_encoder = load_model_artifacts(args.xgboost_model, 'xgboost')
         
         logger.info("🔄 Loading Logistic Regression model...")
-        lr_model, lr_scaler = load_model_artifacts(args.lr_model, 'logistic_regression')
+        lr_model, lr_scaler, lr_label_encoder = load_model_artifacts(args.lr_model, 'logistic_regression')
         
-        # Evaluate XGBoost
+        # Encode test labels ONCE using XGBoost encoder (or LR encoder as fallback)
+        logger.info("🔄 Encoding test labels...")
+        primary_encoder = xgb_label_encoder if xgb_label_encoder is not None else lr_label_encoder
+        y_test_encoded = encode_labels(y_test, primary_encoder, "evaluation")
+        
+        # Evaluate both models using the SAME encoded labels
         logger.info("📊 Evaluating XGBoost model...")
-        xgb_metrics, xgb_report, xgb_cm, xgb_pred, xgb_probs = evaluate_model(
-            xgb_model, None, X_test, y_test, 'xgboost'
+        xgb_metrics, xgb_report, xgb_cm, xgb_pred, xgb_probs = evaluate_single_model(
+            xgb_model, None, X_test, y_test_encoded, 'xgboost'
         )
         
-        # Evaluate Logistic Regression
         logger.info("📊 Evaluating Logistic Regression model...")
-        lr_metrics, lr_report, lr_cm, lr_pred, lr_probs = evaluate_model(
-            lr_model, lr_scaler, X_test, y_test, 'logistic_regression'
+        lr_metrics, lr_report, lr_cm, lr_pred, lr_probs = evaluate_single_model(
+            lr_model, lr_scaler, X_test, y_test_encoded, 'logistic_regression'
         )
         
         # Compare models and determine best
@@ -236,14 +349,14 @@ def main():
         logger.info(f"📊 XGBoost composite score: {xgb_composite:.4f}")
         logger.info(f"📊 Logistic Regression composite score: {lr_composite:.4f}")
         
-        # Create comparison plots (like your existing visualization)
+        # Create comparison plots
         logger.info("📈 Creating comparison plots...")
         create_comparison_plots(
             xgb_metrics, lr_metrics, xgb_cm, lr_cm,
-            y_test, xgb_probs, lr_probs, args.plots_output
+            y_test_encoded, xgb_probs, lr_probs, args.plots_output
         )
         
-        # Prepare evaluation results (similar to your existing model_comparison.csv)
+        # Prepare evaluation results
         evaluation_results = {
             'evaluation_timestamp': datetime.now().isoformat(),
             'test_samples': int(len(X_test)),
@@ -286,7 +399,7 @@ def main():
         with open(os.path.join(args.evaluation_output, 'best_model_metrics.json'), 'w') as f:
             json.dump(best_metrics, f, indent=2)
         
-        # Model comparison CSV (like your existing output)
+        # Model comparison CSV
         comparison_df = pd.DataFrame({
             'Model': ['XGBoost', 'Logistic Regression'],
             'Accuracy': [xgb_metrics['accuracy'], lr_metrics['accuracy']],
@@ -305,7 +418,7 @@ def main():
         
         logger.info("✅ Model evaluation completed successfully!")
         
-        # Print summary (like your existing output)
+        # Print summary
         print("=" * 60)
         print("MODEL EVALUATION SUMMARY")
         print("=" * 60)
@@ -326,6 +439,8 @@ def main():
         
     except Exception as e:
         logger.error(f"❌ Evaluation failed: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         raise e
 
 if __name__ == '__main__':
