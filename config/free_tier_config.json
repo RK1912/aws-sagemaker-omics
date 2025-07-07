@@ -20,13 +20,13 @@
   },
   "instances": {
     "processing": {
-      "type": "ml.m4.xlarge",
+      "type": "ml.t3.medium",
       "count": 1,
       "volume_size_gb": 30,
       "max_runtime_seconds": 3600
     },
     "training": {
-      "type": "ml.m4.xlarge",
+      "type": "ml.m5.xlarge",
       "count": 1,
       "volume_size_gb": 30,
       "max_runtime_seconds": 3600,
@@ -37,7 +37,7 @@
       "type": "ml.m4.xlarge"
     },
     "notebook": {
-      "type": "ml.t3.medium",
+      "type": "ml.m5.xlarge",
       "volume_size_gb": 20
     }
   },

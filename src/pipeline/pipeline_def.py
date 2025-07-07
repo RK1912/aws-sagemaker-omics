@@ -21,7 +21,7 @@ from sagemaker.workflow.functions import Join
 from sagemaker.workflow.pipeline_context import PipelineSession
 from sagemaker.processing import ProcessingInput, ProcessingOutput
 from sagemaker.sklearn.processing import SKLearnProcessor
-from sagemaker.processing import ProcessingInput, ProcessingOutput, ScriptProcessor  # Add ScriptProcessor
+from sagemaker.processing import ProcessingInput, ProcessingOutput, ScriptProcessor
 from sagemaker.sklearn.estimator import SKLearn
 from sagemaker.xgboost.estimator import XGBoost
 from sagemaker.model_metrics import MetricsSource, ModelMetrics
@@ -32,8 +32,11 @@ import os
 
 class OLINKPipeline:
     """
-    Enhanced SageMaker Pipeline for OLINK COVID-19 Classification
-    Optimized for AWS Free Tier with cost controls
+    OLINKPipeline: 
+        1. Reads in the bucket name, pipeline name, AWS region and other information from config file 
+        2. Defines the run parameters such as input data, instance type, model approval status, instance count
+        3. Defines hyperparameters for the 2 models - xgboost and logistic regression 
+        4. Defines the command, inputs and outputs for preprocessing, training xgboost, training logistic regression and model evaluation steps. 
     """
     
     def __init__(self, config_path: str = "config/free_tier_config.json"):
@@ -66,14 +69,13 @@ class OLINKPipeline:
             return json.load(f)
     
     def _define_parameters(self):
-        """Define pipeline parameters for flexibility"""
+        """Defines pipeline parameters and model hyperparameters"""
         
         # Data parameters
         self.input_data_uri = ParameterString(
             name="InputDataUri",
             default_value=f"s3://{self.bucket}/olink_COVID_19_data_labelled.csv"
         )
-        
         
         self.instance_count = ParameterInteger(name="InstanceCount", default_value=1)
         
@@ -96,14 +98,13 @@ class OLINKPipeline:
         # Instance parameters (Free Tier optimized)
         self.processing_instance_type = ParameterString(
             name="ProcessingInstanceType",
-            default_value="ml.t3.medium"  
+            default_value=self.config['instances']['processing']['type']
         )
         
         self.training_instance_type = ParameterString(
             name="TrainingInstanceType", 
-            default_value="ml.t3.medium"  
+            default_value=self.config['instances']['training']['type'] 
         )
-        
         
         # XGBoost hyperparameters
         self.xgb_max_depth = ParameterInteger(
@@ -122,19 +123,39 @@ class OLINKPipeline:
         )
         
         # Logistic Regression hyperparameters
-        self.lr_c = ParameterFloat(
+        self.lr_c = ParameterString(
             name="LRC",
-            default_value=1.0
+            default_value="1.0"
         )
         
-        self.lr_max_iter = ParameterInteger(
+        self.lr_max_iter = ParameterString(
             name="LRMaxIter",
-            default_value=1000
+            default_value="1000"
+        )
+        
+        self.lr_penalty = ParameterString(
+            name="LRPenalty",
+            default_value="l2"
+        )
+        
+        self.lr_solver = ParameterString(
+            name="LRSolver",
+            default_value="liblinear"
+        )
+        
+        self.lr_random_state = ParameterString(
+            name="LRRandomState",
+            default_value="42"
+        )
+        
+        self.lr_class_weight = ParameterString(
+            name="LRClassWeight",
+            default_value="balanced"
         )
     
     def create_preprocessing_step(self):
         """
-        Create data preprocessing step
+        Defines the preprocessing step command, defines inputs and outputs.
         """
         
         # SKLearn processor for preprocessing (Free Tier optimized)
@@ -195,7 +216,7 @@ class OLINKPipeline:
     
     def create_xgboost_training_step(self, preprocessing_step):
         """
-        Create XGBoost training step with your existing logic enhanced
+        Creates XGBoost training step
         """
         
         # XGBoost estimator using built-in container
@@ -207,9 +228,8 @@ class OLINKPipeline:
             role=self.role,
             base_job_name="olink-xgboost-training",
             sagemaker_session=self.pipeline_session,
+            output_path=Join(on="/", values=[self.output_prefix, "models", "xgboost"]),
             max_runtime_in_seconds=3600,  # 1 hour limit
-            use_spot_instances=True,  # Cost optimization
-            max_wait_time_in_seconds=7200,  # 2 hour max wait
             hyperparameters={
                 "max_depth": self.xgb_max_depth,
                 "eta": self.xgb_eta,
@@ -239,27 +259,27 @@ class OLINKPipeline:
     
     def create_logistic_regression_training_step(self, preprocessing_step):
         """
-        Create Logistic Regression training step 
+        Create Logistic Regression training step
         """
         
         # SKLearn estimator for Logistic Regression
         lr_estimator = SKLearn(
-            entry_point="src/training/train_logistic_regression.py",
+            entry_point="src/training/train_logistic_regression.py",  # Make sure this path is correct
             framework_version="1.0-1", 
             py_version="py3",
             instance_type=self.training_instance_type,
             role=self.role,
             base_job_name="olink-lr-training",
             sagemaker_session=self.pipeline_session,
+            output_path=Join(on="/", values=[self.output_prefix, "models", "logistic_regression"]),
             max_runtime_in_seconds=3600,  # 1 hour limit
-            use_spot_instances=True,  # Cost optimization
-            max_wait_time_in_seconds=7200,
             hyperparameters={
                 "C": self.lr_c,
                 "max_iter": self.lr_max_iter,
-                "penalty": "l2",
-                "solver": "liblinear",
-                "random_state": 42
+                "penalty": self.lr_penalty,
+                "solver": self.lr_solver,
+                "random_state": self.lr_random_state,
+                "class_weight": self.lr_class_weight
             }
         )
         
@@ -283,7 +303,6 @@ class OLINKPipeline:
     def create_evaluation_step(self, preprocessing_step, xgb_step, lr_step):
         """
         Create model evaluation step that compares both models
-        Enhanced from your existing comparison logic
         """
         
         # Evaluation processor
@@ -372,7 +391,6 @@ class OLINKPipeline:
             sagemaker_session=self.pipeline_session,
             role=self.role
         )
-        
         
         # Register best model
         register_model_step = ModelStep(
@@ -465,7 +483,11 @@ class OLINKPipeline:
                 self.xgb_eta, 
                 self.xgb_num_round,
                 self.lr_c,
-                self.lr_max_iter
+                self.lr_max_iter,
+                self.lr_penalty,
+                self.lr_solver,
+                self.lr_random_state,
+                self.lr_class_weight
             ],
             steps=[
                 preprocessing_step,
