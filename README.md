@@ -142,3 +142,7 @@ s3://your-bucket/pipeline-output/
 └── plots/
     └── model_comparison.png    # Visualization plots
 ```
+
+## Future work 
+1. Integration with AWS Glue for ETL preprocessing of data
+2. Integration with RDS and/or DynamoDB for storing raw data and metadata
