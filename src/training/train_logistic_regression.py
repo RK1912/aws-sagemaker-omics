@@ -12,6 +12,13 @@ import json
 import logging
 import sys
 from datetime import datetime
+import mlflow
+import mlflow.sklearn
+
+mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", None)
+if mlflow_uri:
+    mlflow.set_tracking_uri(mlflow_uri)
+    mlflow.set_experiment("OLINK-Experiments")
 
 # Custom JSON encoder to handle numpy types
 class NumpyEncoder(json.JSONEncoder):
@@ -296,6 +303,24 @@ def main():
         print(f"ERROR: {str(e)}")
         print(f"TRACEBACK: {traceback.format_exc()}")
         sys.exit(1)
+
+    with mlflow.start_run():
+        mlflow.log_param("model_type", "LogisticRegression")
+        mlflow.log_params({
+            "C": c_value,
+            "max_iter": max_iter_value,
+            "penalty": penalty_value,
+            "solver": solver_value,
+            "class_weight": class_weight_value
+        })
+        mlflow.log_metrics({
+            "accuracy": accuracy,
+            "f1_score": f1,
+            "auc": auc
+        })
+        mlflow.sklearn.log_model(model, "model")
+
+    
 
 if __name__ == '__main__':
     main()
