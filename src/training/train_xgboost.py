@@ -7,9 +7,16 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, classificat
 from sklearn.preprocessing import LabelEncoder
 import os
 import json
+import mlflow
+import mlflow.sklearn
 import logging
 from datetime import datetime
 import subprocess
+
+mlflow_uri = os.environ.get("MLFLOW_TRACKING_URI", None)
+if mlflow_uri:
+    mlflow.set_tracking_uri(mlflow_uri)
+    mlflow.set_experiment("OLINK-Experiments")
 
 # Custom JSON encoder to handle numpy types
 class NumpyEncoder(json.JSONEncoder):
@@ -277,6 +284,22 @@ def main():
         import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise e
+    
+    with mlflow.start_run():
+        mlflow.log_param("model_type", "XGBoost")
+        mlflow.log_params({
+            "max_depth": max_depth,
+            "eta": eta,
+            "num_round": num_round
+        })
+        mlflow.log_metrics({
+            "accuracy": accuracy,
+            "f1_score": f1,
+            "auc": auc
+        })
+        mlflow.xgboost.log_model(model, "model")
+
+
 
 if __name__ == '__main__':
     main()

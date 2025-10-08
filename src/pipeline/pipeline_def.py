@@ -83,6 +83,11 @@ class OLINKPipeline:
             name="OutputPrefix",
             default_value=f"s3://{self.bucket}/pipeline-output"
         )
+
+        self.mlflow_output_uri = ParameterString(
+            name = "MLFlowtrackingUri",
+            default_value=f"s3://{self.bucket}/mlflow"
+        )
         
         # Model approval parameters
         self.model_approval_status = ParameterString(
@@ -229,6 +234,7 @@ class OLINKPipeline:
             base_job_name="olink-xgboost-training",
             sagemaker_session=self.pipeline_session,
             output_path=Join(on="/", values=[self.output_prefix, "models", "xgboost"]),
+            environment = { "MLFLOW_TRACKING_URI": self.mlflow_output_uri},
             max_runtime_in_seconds=3600,  # 1 hour limit
             hyperparameters={
                 "max_depth": self.xgb_max_depth,
@@ -272,6 +278,7 @@ class OLINKPipeline:
             base_job_name="olink-lr-training",
             sagemaker_session=self.pipeline_session,
             output_path=Join(on="/", values=[self.output_prefix, "models", "logistic_regression"]),
+            environment = { "MLFLOW_TRACKING_URI": self.mlflow_output_uri},
             max_runtime_in_seconds=3600,  # 1 hour limit
             hyperparameters={
                 "C": self.lr_c,
@@ -474,6 +481,7 @@ class OLINKPipeline:
             parameters=[
                 self.input_data_uri,
                 self.output_prefix,
+                self.mlflow_output_uri,
                 self.model_approval_status,
                 self.accuracy_threshold,
                 self.processing_instance_type,
@@ -488,6 +496,7 @@ class OLINKPipeline:
                 self.lr_solver,
                 self.lr_random_state,
                 self.lr_class_weight
+                
             ],
             steps=[
                 preprocessing_step,
